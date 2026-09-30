@@ -1061,8 +1061,7 @@ ipcMain.handle('library', () => {
       .map((dir) => {
         let lutris = null;
         try { lutris = contextForLutrisGame(dir); } catch { /* installer reports invalid runner details */ }
-        const name = lutris && path.basename(dir) === '_retail_' && fs.existsSync(path.join(dir, 'Wow.exe'))
-          ? 'World of Warcraft' : path.basename(dir);
+        const name = path.basename(dir);
         return { launcher: lutris ? 'Lutris' : 'Added by hand', id: null, name, dir, poster: null };
       })
   );

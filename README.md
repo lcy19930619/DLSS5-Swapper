@@ -40,14 +40,24 @@
 
 ### 本 fork 改了什么
 
-- 手动添加的游戏如果位于已有 Lutris Wine 前缀的真实 `drive_c` 内，会读取 `$XDG_DATA_HOME/lutris/games/*.yml`（默认 `~/.local/share/lutris/games`），识别前缀和运行器。
+- 游戏库自动读取 `$XDG_DATA_HOME/lutris/games/*.{yml,yaml}`（默认 `~/.local/share/lutris/games`），导入配置中登记的 Windows EXE 所在目录，关联已有 Wine 前缀。此逻辑不包含 WoW、战网或其他游戏的名称/安装目录特判。
+- 支持 Linux 绝对路径和 Wine 的 `C:\\`、`D:\\` 等盘符映射；前缀外的已登记游戏也可关联原前缀。真实路径用于导入去重；缺失 EXE、损坏配置和明确的非 Wine runner 被跳过。读取的是游戏 YAML，不是 `pga.db`，未登记的子游戏不会凭空出现。
+- 导入只负责游戏来源与运行环境，渲染 API、EXE 候选和安装路线继续使用原项目的 `scanGame` 管线。手动添加的目录如果位于已登记前缀的真实 `drive_c` 内，也可复用该前缀。
 - `wine.version: ge-proton` 使用 Lutris 的 `runtime/umu/umu-run`，回退候选为 `/usr/bin/umu-run`；沿用配置中的环境变量，默认 `PROTONPATH=GE-Proton`、`GAMEID=umu-default`、`WINEARCH=win64`。这与本机 Lutris 配置一致，但 GE-Proton 别名可能随 UMU 更新解析到新版本，并非版本锁定。
 - 支持配置明确的普通 Wine、system Wine 和 custom Wine；不支持的 custom Proton、缺失运行器和互相冲突的前缀配置会报错，不会静默改用另一套 Wine。
 - Windows ReShade 安装辅助程序在匹配的前缀中运行；Steam Proton 的已有路径保留。辅助进程结束后清理超时计时器。
 - Linux 安装/还原前检查 `/proc` 中的进程名与 Windows 可执行文件名。不能使用 Windows 的“EXE 可写即未运行”判断，因为 Wine 下它不可靠。同名游戏可能被保守阻止；这不是任意 Wine 布局的完整进程探测器。
-- 手动添加 `_retail_` 且存在 `Wow.exe` 的 Lutris 条目显示为 `World of Warcraft`，避免以 `_retail_` 搜索而误配到其他游戏。
 
-当前不支持 Flatpak Lutris 的全部布局、位于前缀外的游戏、Lutris 全局配置继承的完整合并，以及所有自定义运行器。游戏仍由 Lutris/战网启动，Swapper 不是新的游戏启动器。
+当前不支持 Flatpak Lutris 的全部布局、Lutris 全局配置继承的完整合并，以及所有自定义运行器。前缀外未登记的目录不会仅凭父目录关系绑定前缀。游戏仍由 Lutris/启动器启动，Swapper 不是新的游戏启动器。
+
+### 通用 Lutris 自动导入
+
+1. 在 Lutris 为游戏配置 Windows 可执行文件、Wine prefix 和运行器，确认游戏能正常启动。
+2. 打开或刷新 Swapper 游戏库，已登记且 EXE 存在的 Wine 游戏自动作为 `Lutris` 来源出现；无需添加磁盘扫描路径。
+3. 选择条目后由原有扫描器检查渲染能力。自动导入不等于该程序支持 NR，也不会跳过原有兼容性限制。
+4. 如果 Lutris 条目只指向商店启动器，只导入该启动器目录；不会递归扫描整个 Wine 前缀或 Wine 映射的整块磁盘。子游戏应单独登记，或在 Swapper 手动添加实际游戏目录。
+
+代码不依赖本机挂载点。WoW 是下面的验证案例，不是自动导入的特殊规则。该源码功能尚不代表本机已经安装的旧版 Swapper 自动升级。
 
 ### 编译与 Electron 启动失败
 
@@ -78,7 +88,7 @@ sudo chmod 4755 '/opt/DLSS 5 Swapper/chrome-sandbox'
 1. 在 Lutris 配置里确认 Battle.net 的 Wine prefix 和运行器，先通过战网启动一次 WoW。
 2. 在 Swapper 点“添加游戏”，选择**包含 `Wow.exe` 的 `_retail_` 文件夹**，而不是整个磁盘、战网前缀或 `drive_c`。
 3. 例如前缀为 `/path/to/battlenet` 时，选择 `/path/to/battlenet/drive_c/Program Files (x86)/World of Warcraft/_retail_`。
-4. 程序匹配现有 Lutris 配置。出现 `errProtonRequired` 时，检查配置是否能读取、游戏是否真的在前缀内、UMU/Wine 是否存在。仅把 Lutris 游戏添加到 Steam 列表不等于建立可用的 Steam Proton 前缀。
+4. 程序匹配现有 Lutris 配置。也可在 Lutris 为游戏 EXE 单独登记条目，沿用战网前缀，再由 Swapper 自动导入。出现 `errProtonRequired` 时，检查配置是否能读取、游戏是否在前缀内或已被明确登记、UMU/Wine 是否存在。仅把 Lutris 游戏添加到 Steam 列表不等于建立可用的 Steam Proton 前缀。
 
 ### 选择正确的安装路线
 
@@ -213,7 +223,7 @@ npm test
 
 前缀测试覆盖空格路径、符号链接越界、缺失/冲突运行器、环境/参数传递和运行中游戏拦截。文件事务测试不能替代 Wine/GPU 实测。原始 2.2.7 构建记录曾有 6 项全量单元测试失败及 UI 冒烟失败，不将它们包装成“全部通过”。
 
-本次移植在相同 Node/Linux 环境下对照：未修改的目标基线 `9fb0b7c` 为 301 pass / 6 fail / 2 skip；合入后为 305 pass / 6 fail / 2 skip，新增 4 项 Lutris 测试全部通过。失败项名称相同，涉及 API override IPC、篡改 profile 路径保护、history IPC、两项 payload 提示与旧 shader compiler 恢复。未在本提交扩大范围修复这些原有问题，也未重新跑游戏来验证 2.2.9 的完整资源包。
+本次移植在相同 Node/Linux 环境下对照：未修改的目标基线 `9fb0b7c` 为 301 pass / 6 fail / 2 skip；加入通用 Lutris 导入后为 308 pass / 6 fail / 2 skip，新增 7 项 Lutris 测试全部通过，覆盖前缀关联、运行器保护、安装参数、运行中保护、通用导入、外置游戏盘符映射与去重。失败项名称相同，涉及 API override IPC、篡改 profile 路径保护、history IPC、两项 payload 提示与旧 shader compiler 恢复。未在本提交扩大范围修复这些原有问题，也未重新跑游戏来验证 2.2.9 的完整资源包。
 
 ## Download
 
